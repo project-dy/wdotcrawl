@@ -89,15 +89,19 @@ class Wikidot:
     # For the supported formats (module_body) see:
     # See https://github.com/gabrys/wikidot/blob/master/php/modules/list/ListPagesModule.php
     def list_pages_raw(self, limit, offset):
-        res = self.query({
+        op = {
           'moduleName': 'list/ListPagesModule',
           'limit': limit if limit else '10000',
-          'perPage': limit if limit else '10000',
+          'perPage': limit if (limit and limit>0) else '10000',
           'module_body': '%%page_unix_name%%',
           'separate': 'false',
           'p': str(offset),
+          'category': '*',
           'order': 'dateCreatedDesc',  # This way limit makes sense. This is also the default
-        }, '/p/' + str(offset))
+        }
+        if limit<=0:
+            del op['limit']
+        res = self.query(op, '/p/' + str(offset))
         return res
 
     # Client version
