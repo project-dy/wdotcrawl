@@ -16,7 +16,7 @@ import re # For sanitizing usernames to fake email addresses
 
 # Usage:
 #   rm = RepoMaintainer(wikidot, path)
-#   rm.buildRevisionList(pages, depth)
+#   rm.buildRevisionList(pages, depth, category)
 #   rm.openRepo()
 #   while rm.commitNext():
 #       pass
@@ -39,6 +39,7 @@ class RepoMaintainer:
         self.rev_no = 0             # Next revision to process
         self.last_names = {}        # Tracks page renames: name atm -> last name in repo
         self.last_parents = {}      # Tracks page parent names: name atm -> last parent in repo
+        self.category = None        # Tracks category(s) to get form
 
         self.repo = None            # Git repo object
         self.index = None           # Git current index object
@@ -73,8 +74,10 @@ class RepoMaintainer:
     # Persistent metadata about the repo:
     #  - Tracks page renames: name atm -> last name in repo
     #  - Tracks page parent names: name atm -> last parent in repo
+    # Variable metadata about the repo:
+    #  - Tracks category: settings for category(s) to get from
     def saveMetadata(self):
-        metadata = {'names': self.last_names, 'parents': self.last_parents }
+        metadata = { 'category': self.category, 'names': self.last_names, 'parents': self.last_parents }
         fp = open(self.path+'/.metadata.json', 'w')
         json.dump(metadata, fp)
         fp.close()
@@ -82,6 +85,7 @@ class RepoMaintainer:
     def loadMetadata(self):
         fp = open(self.path+'/.metadata.json', 'r')
         metadata = json.load(fp)
+        self.category = metadata['category']
         self.last_names = metadata['names']
         self.last_parents = metadata['parents']
         fp.close()
@@ -90,12 +94,18 @@ class RepoMaintainer:
     #
     # Compiles a combined revision list for a given set of pages, or all pages on the site.
     #  pages: compile history for these pages
-    #  depth: download at most this number of revisions.
+    #  depth: download at most this number of revisions
+    #  category: get from these category(s)
     #
     # If there exists a cached revision list at the repository destination,
     # it is loaded and no requests are made.
     #
-    def buildRevisionList(self, pages = None, depth = 10000):
+    def buildRevisionList(self, pages = None, depth = 10000, category = None):
+        if os.path.isfile(self.path+'/.metadata.json'):
+            self.loadMetadata()
+
+        self.category = category if category else (self.category if self.category else '.')
+
         if os.path.isfile(self.path+'/.wrevs'):
             print("Loading cached revision list...")
             self.loadWRevs()
@@ -124,7 +134,7 @@ class RepoMaintainer:
             if not pages:
                 if self.debug:
                     print('Need to fetch pages')
-                pages = self.wd.list_pages(10000)
+                pages = self.wd.list_pages(10000, self.category)
                 self.savePages(pages)
             elif self.debug:
                 print(len(pages), 'pages loaded')
@@ -187,9 +197,6 @@ class RepoMaintainer:
                 })
             self.saveWRevs() # Save a cached copy
 
-        if os.path.isfile(self.path+'/.metadata.json'):
-            self.loadMetadata()
-
         print("")
 
         print(("Total revisions: "+str(len(self.wrevs))))
@@ -198,7 +205,7 @@ class RepoMaintainer:
             print("Sorting revisions...")
 
         self.wrevs.sort(key=lambda rev: rev['date'])
-        
+
         if self.debug:
             if len(self.wrevs) < 100:
                 print("")
@@ -217,7 +224,7 @@ class RepoMaintainer:
         fp = open(self.path+'/.wstate', 'wb')
         pickle.dump(self.rev_no, fp)
         fp.close()
-    
+
     def loadState(self):
         fp = open(self.path+'/.wstate', 'rb')
         self.rev_no = pickle.load(fp)
@@ -285,7 +292,9 @@ class RepoMaintainer:
             outp.close()
 
         unixname = rev['page_name']
+        winsafename = unixname.replace(':','~') if ':' in unixname else unixname # windows does not allow ':' in file name, this makes pages with colon in unix name safe on windows
         rev_unixname = details['unixname'] # may be different in revision than atm
+        rev_winsafename = rev_unixname.replace(':','~') if ':' in rev_unixname else rev_unixname # windows-safe name in revision
 
         # Unfortunately, there's no exposed way in Wikidot to see page breadcrumbs at any point in history.
         # The only way to know they were changed is revision comments, though evil people may trick us.
@@ -299,13 +308,13 @@ class RepoMaintainer:
         # There are also problems when parent page gets renamed -- see updateChildren
 
         # If the page is tracked and its name just changed, tell Git
-        fname = str(rev_unixname) + '.txt'
+        fname = str(rev_winsafename) + '.txt'
         rename = (unixname in self.last_names) and (self.last_names[unixname] != rev_unixname)
 
         commit_msg = ""
 
         if rename:
-            name_rename_from = str(self.last_names[unixname])+'.txt'
+            name_rename_from = str(self.last_names[unixname]).replace(':','~')+'.txt'
 
             if self.debug:
                 print("Moving renamed", name_rename_from, "to", fname)
@@ -394,7 +403,9 @@ class RepoMaintainer:
     # The rest of the file is preserved.
     #
     def updateParentField(self, child_unixname, parent_oldunixname, parent_newunixname):
-        with codecs.open(self.path+'/'+child_unixname+'.txt', "r", "UTF-8") as f:
+        child_winsafename = child_unixname.replace(':','~')
+        parent_winsafename = parent_unixname.replace(':','~')
+        with codecs.open(self.path+'/'+child_winsafename+'.txt', "r", "UTF-8") as f:
             content = f.readlines()
         # Since this is all tracked by us, we KNOW there's a line in standard format somewhere
         idx = content.index('parent:'+parent_oldunixname+'\n')
@@ -402,7 +413,7 @@ class RepoMaintainer:
             raise Exception("Cannot update child page "+child_unixname+": "
                 +"it is expected to have parent set to "+parent_oldunixname+", but there seems to be no such record in it.");
         content[idx] = 'parent:'+parent_newunixname+'\n'
-        with codecs.open(self.path+'/'+child_unixname+'.txt', "w", "UTF-8") as f:
+        with codecs.open(self.path+'/'+child_winsafename+'.txt', "w", "UTF-8") as f:
             f.writelines(content)
 
 

@@ -88,7 +88,7 @@ class Wikidot:
     # Raw version
     # For the supported formats (module_body) see:
     # See https://github.com/gabrys/wikidot/blob/master/php/modules/list/ListPagesModule.php
-    def list_pages_raw(self, limit, offset):
+    def list_pages_raw(self, limit, offset, category):
         op = {
           'moduleName': 'list/ListPagesModule',
           'limit': limit if limit else '10000',
@@ -96,7 +96,7 @@ class Wikidot:
           'module_body': '%%page_unix_name%%',
           'separate': 'false',
           'p': str(offset),
-          'category': '*',
+          'category': category if category else '.',
           'order': 'dateCreatedDesc',  # This way limit makes sense. This is also the default
         }
         if limit<=0:
@@ -105,12 +105,12 @@ class Wikidot:
         return res
 
     # Client version
-    def list_pages(self, limit):
+    def list_pages(self, limit, category):
         offset = 1
         pages = []
 
         while True:
-            raw = self.list_pages_raw(limit, offset).replace('<br/>',"\n")
+            raw = self.list_pages_raw(limit, offset, category).replace('<br/>',"\n")
             soup = BeautifulSoup(raw, 'html.parser')
 
 
