@@ -16,7 +16,7 @@ import re # For sanitizing usernames to fake email addresses
 
 # Usage:
 #   rm = RepoMaintainer(wikidot, path)
-#   rm.buildRevisionList(pages, depth, category)
+#   rm.buildRevisionList(pages, depth, category, tags)
 #   rm.openRepo()
 #   while rm.commitNext():
 #       pass
@@ -40,6 +40,7 @@ class RepoMaintainer:
         self.last_names = {}        # Tracks page renames: name atm -> last name in repo
         self.last_parents = {}      # Tracks page parent names: name atm -> last parent in repo
         self.category = None        # Tracks category(s) to get form
+        self.tags = None            # Tracks tag(s) to get form
 
         self.repo = None            # Git repo object
         self.index = None           # Git current index object
@@ -76,8 +77,9 @@ class RepoMaintainer:
     #  - Tracks page parent names: name atm -> last parent in repo
     # Variable metadata about the repo:
     #  - Tracks category: settings for category(s) to get from
+    #  - Tracks tags: settings for tag(s) to get from
     def saveMetadata(self):
-        metadata = { 'category': self.category, 'names': self.last_names, 'parents': self.last_parents }
+        metadata = { 'category': self.category, 'tags': self.tags, 'names': self.last_names, 'parents': self.last_parents }
         fp = open(self.path+'/.metadata.json', 'w')
         json.dump(metadata, fp)
         fp.close()
@@ -86,6 +88,7 @@ class RepoMaintainer:
         fp = open(self.path+'/.metadata.json', 'r')
         metadata = json.load(fp)
         self.category = metadata['category']
+        self.tags = metadata['tags']
         self.last_names = metadata['names']
         self.last_parents = metadata['parents']
         fp.close()
@@ -96,15 +99,17 @@ class RepoMaintainer:
     #  pages: compile history for these pages
     #  depth: download at most this number of revisions
     #  category: get from these category(s)
+    #  tags: get from these tag(s)
     #
     # If there exists a cached revision list at the repository destination,
     # it is loaded and no requests are made.
     #
-    def buildRevisionList(self, pages = None, depth = 10000, category = None):
+    def buildRevisionList(self, pages = None, depth = 10000, category = None, tags = None):
         if os.path.isfile(self.path+'/.metadata.json'):
             self.loadMetadata()
 
         self.category = category if category else (self.category if self.category else '.')
+        self.tags = tags if tags else (self.tags if self.tags else None)
 
         if os.path.isfile(self.path+'/.wrevs'):
             print("Loading cached revision list...")
@@ -134,7 +139,7 @@ class RepoMaintainer:
             if not pages:
                 if self.debug:
                     print('Need to fetch pages')
-                pages = self.wd.list_pages(10000, self.category)
+                pages = self.wd.list_pages(10000, self.category, self.tags)
                 self.savePages(pages)
             elif self.debug:
                 print(len(pages), 'pages loaded')

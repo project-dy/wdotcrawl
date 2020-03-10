@@ -28,6 +28,7 @@ parser.add_argument('--page', type=str, help='Query only this page')
 parser.add_argument('--depth', type=int, default='10000', help='Query only last N revisions')
 parser.add_argument('--revids', action='store_true', help='Store last revision ids in the repository')
 parser.add_argument('--category', type=str, help='Selecting categories to query (use "" to contain)')
+parser.add_argument('--tags', type=str, default=None, help='Selecting tags to query (use "" to contain)')
 # Common settings
 parser.add_argument('--debug', action='store_true', help='Print debug info')
 parser.add_argument('--delay', type=int, default='200', help='Delay between consequent calls to Wikidot')
@@ -43,14 +44,14 @@ def force_dirs(path):
     os.makedirs(path, exist_ok=True)
 
 if args.list_pages_raw:
-    print((wd.list_pages_raw(args.depth, 1, args.category)))
+    print((wd.list_pages_raw(args.depth, 1, args.category, args.tags)))
 
 elif args.list_pages:
-    for page in wd.list_pages(args.depth, args.category):
+    for page in wd.list_pages(args.depth, args.category, args.tags):
         print(page)
 
 elif args.list_pages_no:
-    print(len(wd.list_pages(-1, args.category)))
+    print(len(wd.list_pages(-1, args.category, args.tags)))
 
 elif args.source:
     if not args.page:
@@ -103,7 +104,7 @@ elif args.dump:
     rm = RepoMaintainer(wd, args.dump)
     rm.debug = args.debug
     rm.storeRevIds = args.revids
-    rm.buildRevisionList([args.page] if args.page else None, args.depth, args.category)
+    rm.buildRevisionList([args.page] if args.page else None, args.depth, args.category, args.tags)
     rm.openRepo()
 
     print("Downloading revisions...")
