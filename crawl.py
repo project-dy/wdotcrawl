@@ -15,6 +15,7 @@ parser = argparse.ArgumentParser(description='Queries Wikidot')
 parser.add_argument('site', help='URL of Wikidot site')
 # Actions
 parser.add_argument('--list-pages', action='store_true', help='List all pages on this site')
+parser.add_argument('--list-pages-no', action='store_true', help='List number of total pages on this site')
 parser.add_argument('--source', action='store_true', help='Print page source (requires --page)')
 parser.add_argument('--content', action='store_true', help='Print page content (requires --page)')
 parser.add_argument('--log', action='store_true', help='Print page revision log (requires --page)')
@@ -47,25 +48,28 @@ elif args.list_pages:
     for page in wd.list_pages(args.depth):
         print(page)
 
+elif args.list_pages_no:
+    print(len(wd.list_pages(-1)))
+
 elif args.source:
     if not args.page:
         raise Exception("Please specify --page for --source.")
-    
+
     page_id = wd.get_page_id(args.page)
     if not page_id:
         raise Exception("Page not found: "+args.page)
-    
+
     revs = wd.get_revisions(page_id, 1) # last revision
     print((wd.get_revision_source(revs[0]['id'])))
 
 elif args.content:
     if not args.page:
         raise Exception("Please specify --page for --source.")
-    
+
     page_id = wd.get_page_id(args.page)
     if not page_id:
         raise Exception("Page not found: "+args.page)
-    
+
     revs = wd.get_revisions(page_id, 1) # last revision
     print((wd.get_revision_version(revs[0]['id'])))
 
