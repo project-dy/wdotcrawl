@@ -284,3 +284,29 @@ class Wikidot:
           'title': res[1],
           'content': str(soup), # only content remains
         }
+
+
+    # Retrieves the rating for the page
+    def get_rates_raw(self, page_id):
+        res = self.query({
+          'moduleName': 'pagerate/WhoRatedPageModule',
+          'pageId': page_id,
+        })
+
+        return res
+
+    def get_rates(self, page_id):
+        res = self.get_rates_raw(page_id).replace("<br/>", "</div><div>") # put every vote in their own divs
+        soup = BeautifulSoup(res, 'html.parser')
+        voters_raw = soup.select("div")
+        voters_raw.pop(-1) # remove empty last div
+        voters = {"normal":{}, "deleted":{}}
+        for voter in voters_raw:
+            vote = voter.span.find_next_sibling("span").string.strip()
+            if voter.find("span", class_="deleted"):
+                user = voter.find("span", class_="deleted")["data-id"]
+                voters["deleted"][user] = vote
+            else:
+                user = voter.span.a["onclick"].replace('WIKIDOT.page.listeners.userInfo(','').replace('); return false;','') # why does wikidot only put existing user id in the onclick attribute bruh
+                voters["normal"][user] = vote
+        return voters
