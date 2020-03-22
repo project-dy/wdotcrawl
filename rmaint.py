@@ -34,7 +34,7 @@ class RepoMaintainer:
 
         # Internal state
         self.wrevs = None           # Compiled wikidot revision list (history)
-        self.fetcheds_revids = []   # Compiled wikidot revision list (history)
+        self.fetched_revids = []  # # Compiled wikidot revision list (history)
 
         self.rev_no = 0             # Next revision to process
         self.last_names = {}        # Tracks page renames: name atm -> last name in repo
@@ -196,6 +196,7 @@ class RepoMaintainer:
                   'page_id' : page_id,
                   'page_name' : page, # name atm, not at revision time
                   'rev_id' : rev['id'],
+                  'flag' : rev['flag'],
                   'date' : rev['date'],
                   'user' : rev['user'],
                   'comment' : rev['comment'],
@@ -274,6 +275,9 @@ class RepoMaintainer:
             return False
 
         rev = self.wrevs[self.rev_no]
+        pagerev = [val for idx,val in enumerate(self.wrevs) if (val['page_id']==rev['page_id'])]
+        tagrev = [val for idx,val in enumerate(pagerev) if (val['flag']=='A')]
+        unixname = rev['page_name']
 
         if rev['rev_id'] in self.fetched_revids:
             if self.debug:
@@ -287,6 +291,14 @@ class RepoMaintainer:
         source = self.wd.get_revision_source(rev['rev_id'])
         # Page title and unix_name changes are only available through another request:
         details = self.wd.get_revision_version(rev['rev_id'])
+        # Page tags changes are only available through a third request:
+        if tagrev:
+            new_rev_id = tagrev[0]['rev_id'] if rev['rev_id']!=tagrev[0]['rev_id'] else pagerev[0]['rev_id']
+            tags = self.wd.get_tags_from_diff(rev['rev_id'], new_rev_id)
+        else:
+            # Page scraping for tags
+            # This has to be done because we dont know if the page tags are empty or same as created with url /tags/
+            tags = self.wd.get_page_tags(unixname)
 
         # Store revision_id for last commit
         # Without this, empty commits (e.g. file uploads) will be skipped by Git
@@ -296,7 +308,6 @@ class RepoMaintainer:
             outp.write(rev['rev_id']) # rev_ids are unique amongst all pages, and only one page changes in each commit anyway
             outp.close()
 
-        unixname = rev['page_name']
         winsafename = unixname.replace(':','~') if ':' in unixname else unixname # windows does not allow ':' in file name, this makes pages with colon in unix name safe on windows
         rev_unixname = details['unixname'] # may be different in revision than atm
         rev_winsafename = rev_unixname.replace(':','~') if (rev_unixname and (':' in rev_unixname)) else rev_unixname # windows-safe name in revision
@@ -347,6 +358,8 @@ class RepoMaintainer:
         outp = codecs.open(self.path + '/' + fname, "w", "UTF-8")
         if details['title']:
             outp.write('title:'+details['title']+'\n')
+        if tags:
+            outp.write('tags:'+tags+'\n')
         if parent_unixname:
             outp.write('parent:'+parent_unixname+'\n')
         outp.write(source)

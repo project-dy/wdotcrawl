@@ -30,7 +30,3 @@ The descriptions for on-site modules are heavily correlated with AJAX ones:
 Someone else did Wikidot AJAX:
 
 * https://github.com/kerel-fs/ogn-rdb/blob/master/wikidotcrawler.py
-
-Todo: add code to crawl page ratings and tags
-
-* https://github.com/foundation-int-tech-team/sherlock/blob/master/src/spiders/pages.py
