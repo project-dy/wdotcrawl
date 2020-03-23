@@ -88,25 +88,32 @@ class Wikidot:
     # Raw version
     # For the supported formats (module_body) see:
     # See https://github.com/gabrys/wikidot/blob/master/php/modules/list/ListPagesModule.php
-    def list_pages_raw(self, limit, offset):
-        res = self.query({
+    def list_pages_raw(self, limit, offset, category, tags):
+        op = {
           'moduleName': 'list/ListPagesModule',
           'limit': limit if limit else '10000',
-          'perPage': limit if limit else '10000',
+          'perPage': limit if (limit and limit>0) else '10000',
           'module_body': '%%page_unix_name%%',
           'separate': 'false',
           'p': str(offset),
+          'category': category if category else '.',
+          'tags': tags if tags else None,
           'order': 'dateCreatedDesc',  # This way limit makes sense. This is also the default
-        }, '/p/' + str(offset))
+        }
+        if limit<=0:
+            del op['limit']
+        if not tags:
+            del op['tags']
+        res = self.query(op, '/p/' + str(offset))
         return res
 
     # Client version
-    def list_pages(self, limit):
+    def list_pages(self, limit, category, tags):
         offset = 1
         pages = []
 
         while True:
-            raw = self.list_pages_raw(limit, offset).replace('<br/>',"\n")
+            raw = self.list_pages_raw(limit, offset, category, tags).replace('<br/>',"\n")
             soup = BeautifulSoup(raw, 'html.parser')
 
 
@@ -178,6 +185,19 @@ class Wikidot:
         return None
 
 
+    # Retrieves and returns page tags by page unix_name.
+
+    def get_page_tags(self, page_unix_name):
+        # You can only go page scraping if the tags are never changed and the cli isn't logged into wikidot...
+        self._wait_request_slot()
+        req = requests.request('GET', self.site+'/'+page_unix_name + '/noredirect/true')
+        soup = BeautifulSoup(req.text, 'html.parser')
+        taglist = []
+        for item in soup.body.select('.page-tags span a'):
+            taglist.append(item.text)
+        return ' '.join(taglist)
+
+
     # Retrieves a list of revisions for a page.
     # See https://github.com/gabrys/wikidot/blob/master/php/modules/history/PageRevisionListModule.php
 
@@ -204,6 +224,11 @@ class Wikidot:
             rev_id = tr.input['value'] if tr.input else None
             if rev_id is None: continue # can't parse
 
+            # Flag in <span class="spantip">
+            rev_flag = None
+            flag_span = tr.find("span", attrs={"class": "spantip"})
+            rev_flag = flag_span.getText() if flag_span else None
+
             # Unixtime is stored as a CSS class time_*
             rev_date = 0
             date_span = tr.find("span", attrs={"class": "odate"})
@@ -226,12 +251,40 @@ class Wikidot:
 
             revs.append({
                 'id': rev_id,
+                'flag': rev_flag,
                 'date': rev_date,
                 'user': rev_user,
                 'comment': rev_comment,
             })
         return revs
 
+    # Retrieves revision differences for two revisions.
+    # The from and to ids cannot be the same.
+    def get_revision_diff_raw(self, from_rev_id, to_rev_id):
+        res = self.query({
+          'moduleName': 'history/PageDiffModule',
+          'from_revision_id': from_rev_id,
+          'to_revision_id': to_rev_id,
+          'show_type': 'inline',
+        }).replace('</a>','') # the tags in the <td> from PageDiffModule response strangely have </a> appended
+
+        soup = BeautifulSoup(res, 'html.parser')
+        return soup.table.contents
+
+    # Returns only the tag changes since that's the only thing we care about at the moment.
+    # Why does wikidot not put tags in the response from page version module?
+    def get_tags_from_diff(self, from_rev_id, to_rev_id):
+        from_tags = None
+        to_tags = None
+        for tr in self.get_revision_diff_raw(from_rev_id, to_rev_id):
+            if tr.name != 'tr': continue # there's a header + various junk
+            tds = tr.find_all('td')
+            if len(tds) < 3: continue
+            if tds[0].get_text().strip() == 'Tags:':
+                from_tags = tds[1].get_text().strip()
+                to_tags = tds[2].get_text().strip()
+
+        return from_tags
 
     # Retrieves revision source for a revision.
     # There's no raw version because there's nothing else in raw.
@@ -277,3 +330,29 @@ class Wikidot:
           'title': res[1],
           'content': str(soup), # only content remains
         }
+
+
+    # Retrieves the rating for the page
+    def get_rates_raw(self, page_id):
+        res = self.query({
+          'moduleName': 'pagerate/WhoRatedPageModule',
+          'pageId': page_id,
+        })
+
+        return res
+
+    def get_rates(self, page_id):
+        res = self.get_rates_raw(page_id).replace("<br/>", "</div><div>") # put every vote in their own divs
+        soup = BeautifulSoup(res, 'html.parser')
+        voters_raw = soup.select("div")
+        voters_raw.pop(-1) # remove empty last div
+        voters = {"normal":{}, "deleted":{}}
+        for voter in voters_raw:
+            vote = voter.span.find_next_sibling("span").string.strip()
+            if voter.find("span", class_="deleted"):
+                user = voter.find("span", class_="deleted")["data-id"]
+                voters["deleted"][user] = vote
+            else:
+                user = voter.span.a["onclick"].replace('WIKIDOT.page.listeners.userInfo(','').replace('); return false;','') # why does wikidot only put existing user id in the onclick attribute bruh
+                voters["normal"][user] = vote
+        return voters

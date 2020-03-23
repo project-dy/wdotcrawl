@@ -3,6 +3,8 @@ This is a Python command line client for relatively popular wiki hosting http://
 * List all pages on a site
 * See all revisions of a page
 * Query page source
+* List number of pages on a site
+* Query condition selection by category and/or tags
 
 Most interestingly, it allows you to download the whole site as a Git repository, with proper commit dates, author and comments!
 
