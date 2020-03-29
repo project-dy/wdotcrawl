@@ -34,7 +34,7 @@ class RepoMaintainer:
 
         # Internal state
         self.wrevs = None           # Compiled wikidot revision list (history)
-        self.fetched_revids = []  # # Compiled wikidot revision list (history)
+        self.fetched_revids = []    # Compiled wikidot revision list (history)
 
         self.rev_no = 0             # Next revision to process
         self.last_names = {}        # Tracks page renames: name atm -> last name in repo
@@ -308,9 +308,9 @@ class RepoMaintainer:
             outp.write(rev['rev_id']) # rev_ids are unique amongst all pages, and only one page changes in each commit anyway
             outp.close()
 
-        winsafename = unixname.replace(':','~') if ':' in unixname else unixname # windows does not allow ':' in file name, this makes pages with colon in unix name safe on windows
+        winsafename = unixname.replace(':','~') # windows does not allow ':' in file name, this makes pages with colon in unix name safe on windows
         rev_unixname = details['unixname'] # may be different in revision than atm
-        rev_winsafename = rev_unixname.replace(':','~') if (rev_unixname and (':' in rev_unixname)) else rev_unixname # windows-safe name in revision
+        rev_winsafename = rev_unixname.replace(':','~') # windows-safe name in revision
 
         # Unfortunately, there's no exposed way in Wikidot to see page breadcrumbs at any point in history.
         # The only way to know they were changed is revision comments, though evil people may trick us.
@@ -359,7 +359,7 @@ class RepoMaintainer:
         if details['title']:
             outp.write('title:'+details['title']+'\n')
         if tags:
-            outp.write('tags:'+tags+'\n')
+            outp.write('tags:'+' '.join(tags)+'\n')
         if parent_unixname:
             outp.write('parent:'+parent_unixname+'\n')
         outp.write(source)

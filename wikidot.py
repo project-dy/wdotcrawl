@@ -195,7 +195,7 @@ class Wikidot:
         taglist = []
         for item in soup.body.select('.page-tags span a'):
             taglist.append(item.text)
-        return ' '.join(taglist)
+        return taglist
 
 
     # Retrieves a list of revisions for a page.
@@ -266,7 +266,7 @@ class Wikidot:
           'from_revision_id': from_rev_id,
           'to_revision_id': to_rev_id,
           'show_type': 'inline',
-        }).replace('</a>','') # the tags in the <td> from PageDiffModule response strangely have </a> appended
+        }).replace('</a>','') # the tags within the <td> from PageDiffModule response strangely have </a> appended
 
         soup = BeautifulSoup(res, 'html.parser')
         return soup.table.contents
@@ -281,8 +281,8 @@ class Wikidot:
             tds = tr.find_all('td')
             if len(tds) < 3: continue
             if tds[0].get_text().strip() == 'Tags:':
-                from_tags = tds[1].get_text().strip()
-                to_tags = tds[2].get_text().strip()
+                from_tags = tds[1].get_text().strip().split(' ')
+                to_tags = tds[2].get_text().strip().split(' ')
 
         return from_tags
 
