@@ -310,7 +310,7 @@ class RepoMaintainer:
             outp.close()
 
         winsafename = unixname.replace(':','~') # windows does not allow ':' in file name, this makes pages with colon in unix name safe on windows
-        rev_unixname = details['unixname'] # may be different in revision than atm
+        rev_unixname = details['unixname'] if details['unixname'] else unixname # may be different in revision than atm
         rev_winsafename = rev_unixname.replace(':','~') # windows-safe name in revision
 
         # Unfortunately, there's no exposed way in Wikidot to see page breadcrumbs at any point in history.
