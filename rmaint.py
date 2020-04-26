@@ -104,12 +104,13 @@ class RepoMaintainer:
     # If there exists a cached revision list at the repository destination,
     # it is loaded and no requests are made.
     #
-    def buildRevisionList(self, pages = None, depth = 10000, category = None, tags = None):
+    def buildRevisionList(self, pages = None, depth = 10000, category = None, tags = None, created_by = None):
         if os.path.isfile(self.path+'/.metadata.json'):
             self.loadMetadata()
 
         self.category = category if category else (self.category if self.category else '.')
         self.tags = tags if tags else (self.tags if self.tags else None)
+        self.created_by = created_by if created_by else (self.created_by if self.created_by else None)
 
         if os.path.isfile(self.path+'/.wrevs'):
             print("Loading cached revision list...")
@@ -139,7 +140,7 @@ class RepoMaintainer:
             if not pages:
                 if self.debug:
                     print('Need to fetch pages')
-                pages = self.wd.list_pages(10000, self.category, self.tags)
+                pages = self.wd.list_pages(10000, self.category, self.tags, self.created_by)
                 self.savePages(pages)
             elif self.debug:
                 print(len(pages), 'pages loaded')

@@ -13,7 +13,7 @@ Most interestingly, it allows you to download the whole site as a Git repository
     crawl.py http://example.wikidot.com --dump ExampleRepo
     crawl.py http://example.wikidot.com --log --page example-page
 
-It uses internal Wikidot AJAX requests to do it's job. If you're from Wikidot, please don't break it. Thank you! We'll try to be nice and not put a load on your servers.
+It uses internal Wikidot AJAX requests to do its job. If you're from Wikidot, please don't break it. Thank you! We'll try to be nice and not put a load on your servers.
 
 Downloading of large sites might take a while. If anything breaks, just restart the same command, it'll continue from where it crashed.
 

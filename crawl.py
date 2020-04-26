@@ -31,6 +31,7 @@ parser.add_argument('--depth', type=int, default='10000', help='Query only last 
 parser.add_argument('--revids', action='store_true', help='Store last revision ids in the repository')
 parser.add_argument('--category', type=str, help='Selecting categories to query (use "" to contain)')
 parser.add_argument('--tags', type=str, default=None, help='Selecting tags to query (use "" to contain)')
+parser.add_argument('--creator', type=str, default=None, help='Selecting page creator to query (use "" to contain)')
 # Common settings
 parser.add_argument('--debug', action='store_true', help='Print debug info')
 parser.add_argument('--delay', type=int, default='200', help='Delay between consequent calls to Wikidot')
@@ -125,7 +126,7 @@ elif args.dump:
     rm = RepoMaintainer(wd, args.dump)
     rm.debug = args.debug
     rm.storeRevIds = args.revids
-    rm.buildRevisionList([args.page] if args.page else None, args.depth, args.category, args.tags)
+    rm.buildRevisionList([args.page] if args.page else None, args.depth, args.category, args.tags, args.creator)
     rm.openRepo()
 
     print("Downloading revisions...")
