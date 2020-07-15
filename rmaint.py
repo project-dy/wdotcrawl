@@ -294,11 +294,25 @@ class RepoMaintainer:
         details = self.wd.get_revision_version(rev['rev_id'])
         # Page tags changes are only available through a third request:
         if tagrev:
-            new_rev_id = tagrev[0]['rev_id'] if rev['rev_id']!=tagrev[0]['rev_id'] else pagerev[0]['rev_id']
-            tags = self.wd.get_tags_from_diff(rev['rev_id'], new_rev_id)
+            new_rev_id = ""
+            for id in [v['rev_id'] for k in [enumerate(tagrev), enumerate(pagerev)] for j, v in k]:
+                if rev['rev_id']!=id:
+                    new_rev_id = id
+                    break
+                else:
+                    continue
+            if not new_rev_id:
+                # Page scraping for tags
+                # This is only done where the only new revision for a single page
+                # in the to-be-fetched list is a tag change, and we'll be better off
+                # scraping for tags than to get another revision id for comparison
+                tags = self.wd.get_page_tags(unixname)
+            else:
+                tags = self.wd.get_tags_from_diff(rev['rev_id'], new_rev_id)
         else:
             # Page scraping for tags
-            # This has to be done because we dont know if the page tags are empty or same as created with url /tags/
+            # This has to be done because we don't know if the page tags are added along
+            # with a new page creation (and possibly persist throughout revision history)
             tags = self.wd.get_page_tags(unixname)
 
         # Store revision_id for last commit
