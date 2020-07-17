@@ -451,7 +451,7 @@ class RepoMaintainer:
     #
     def updateParentField(self, child_unixname, parent_oldunixname, parent_newunixname):
         child_winsafename = child_unixname.replace(':','~')
-        parent_winsafename = parent_unixname.replace(':','~')
+        parent_winsafename = parent_oldunixname.replace(':','~')
         with codecs.open(self.path+'/'+child_winsafename+'.txt', "r", "UTF-8") as f:
             content = f.readlines()
         # Since this is all tracked by us, we KNOW there's a line in standard format somewhere
