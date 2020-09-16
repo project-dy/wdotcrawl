@@ -41,6 +41,7 @@ class RepoMaintainer:
         self.last_parents = {}      # Tracks page parent names: name atm -> last parent in repo
         self.category = None        # Tracks category(s) to get form
         self.tags = None            # Tracks tag(s) to get form
+        self.created_by = None      # Tracks creator to get from
 
         self.repo = None            # Git repo object
         self.index = None           # Git current index object
@@ -79,7 +80,7 @@ class RepoMaintainer:
     #  - Tracks category: settings for category(s) to get from
     #  - Tracks tags: settings for tag(s) to get from
     def saveMetadata(self):
-        metadata = { 'category': self.category, 'tags': self.tags, 'names': self.last_names, 'parents': self.last_parents }
+        metadata = { 'category': self.category, 'tags': self.tags, 'created_by': self.created_by, 'names': self.last_names, 'parents': self.last_parents }
         fp = open(self.path+'/.metadata.json', 'w')
         json.dump(metadata, fp)
         fp.close()
@@ -89,6 +90,7 @@ class RepoMaintainer:
         metadata = json.load(fp)
         self.category = metadata['category']
         self.tags = metadata['tags']
+        self.created_by = metadata['created_by']
         self.last_names = metadata['names']
         self.last_parents = metadata['parents']
         fp.close()
