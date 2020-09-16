@@ -17,6 +17,7 @@ parser.add_argument('site', help='URL of Wikidot site')
 parser.add_argument('--list-pages', action='store_true', help='List all pages on this site')
 parser.add_argument('--list-pages-no', action='store_true', help='List number of total pages on this site')
 parser.add_argument('--rates', action='store_true', help='Print page rates (requires --page)')
+parser.add_argument('--max-page-count', type=int, default='10000', help='Only list/fetch up to this amount of pages')
 parser.add_argument('--source', action='store_true', help='Print page source (requires --page)')
 parser.add_argument('--content', action='store_true', help='Print page content (requires --page)')
 parser.add_argument('--log', action='store_true', help='Print page revision log (requires --page)')
@@ -32,6 +33,9 @@ parser.add_argument('--revids', action='store_true', help='Store last revision i
 parser.add_argument('--category', type=str, help='Selecting categories to query (use "" to contain)')
 parser.add_argument('--tags', type=str, default=None, help='Selecting tags to query (use "" to contain)')
 parser.add_argument('--creator', type=str, default=None, help='Selecting page creator to query (use "" to contain)')
+parser.add_argument('--skip', type=str, help='Skip the specified revision')
+parser.add_argument('--skip-pages', type=str, help='Skip the specified pages')
+parser.add_argument('--cleanup', action='store_true', help='Clean up after downloading repo')
 # Common settings
 parser.add_argument('--debug', action='store_true', help='Print debug info')
 parser.add_argument('--delay', type=int, default='200', help='Delay between consequent calls to Wikidot')
@@ -47,10 +51,10 @@ def force_dirs(path):
     os.makedirs(path, exist_ok=True)
 
 if args.list_pages_raw:
-    print((wd.list_pages_raw(args.depth, 1, args.category, args.tags)))
+    print((wd.list_pages_raw(args.max_pages_count, 1, args.category, args.tags)))
 
 elif args.list_pages:
-    for page in wd.list_pages(args.depth, args.category, args.tags):
+    for page in wd.list_pages(args.max_pages_count, args.category, args.tags):
         print(page)
 
 elif args.list_pages_no:
@@ -60,7 +64,7 @@ elif args.source:
     if not args.page:
         raise Exception("Please specify --page for --source.")
 
-    page_id = wd.get_page_id(args.page)
+    page_id = wd.get_page_id(page_unix_name=args.page)
     if not page_id:
         raise Exception("Page not found: "+args.page)
 
@@ -71,7 +75,7 @@ elif args.content:
     if not args.page:
         raise Exception("Please specify --page for --source.")
 
-    page_id = wd.get_page_id(args.page)
+    page_id = wd.get_page_id(page_unix_name=args.page)
     if not page_id:
         raise Exception("Page not found: "+args.page)
 
@@ -82,7 +86,7 @@ elif args.log_raw:
     if not args.page:
         raise Exception("Please specify --page for --log.")
 
-    page_id = wd.get_page_id(args.page)
+    page_id = wd.get_page_id(page_unix_name=args.page)
     if not page_id:
         raise Exception("Page not found: "+args.page)
 
@@ -93,7 +97,7 @@ elif args.log:
     if not args.page:
         raise Exception("Please specify --page for --log.")
 
-    page_id = wd.get_page_id(args.page)
+    page_id = wd.get_page_id(page_unix_name=args.page)
     if not page_id:
         raise Exception("Page not found: "+args.page)
     for rev in wd.get_revisions(page_id, args.depth):
@@ -126,12 +130,20 @@ elif args.dump:
     rm = RepoMaintainer(wd, args.dump)
     rm.debug = args.debug
     rm.storeRevIds = args.revids
-    rm.buildRevisionList([args.page] if args.page else None, args.depth, args.category, args.tags, args.creator)
+    rm.max_depth = args.depth
+    rm.max_page_count = args.max_page_count
+    rm.buildRevisionList([args.page] if args.page else None, args.category, args.tags, args.creator)
     rm.openRepo()
 
-    print("Downloading revisions...")
-    while rm.commitNext():
-        pass
+    if args.skip_pages:
+        rm.pages_to_skip = args.skip_pages.split(",")
+    if args.skip:
+        rm.revs_to_skip = args.skip.split(",")
 
-    rm.cleanup()
+    print("Downloading revisions")
+    rm.fetchAll()
+
+    if args.cleanup:
+        rm.cleanup()
+
     print("Done.")

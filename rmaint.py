@@ -11,12 +11,14 @@ from git import Repo, Actor
 import time # For parsing unix epoch timestamps from wikidot and convert to normal timestamps
 import re # For sanitizing usernames to fake email addresses
 
+from tqdm import tqdm # for progress bar
+
 # Repository builder and maintainer
 # Contains logic for actual loading and maintaining the repository over the course of its construction.
 
 # Usage:
 #   rm = RepoMaintainer(wikidot, path)
-#   rm.buildRevisionList(pages, depth, category, tags)
+#   rm.buildRevisionList(pages, category, tags)
 #   rm.openRepo()
 #   while rm.commitNext():
 #       pass
@@ -34,7 +36,6 @@ class RepoMaintainer:
 
         # Internal state
         self.wrevs = None           # Compiled wikidot revision list (history)
-        self.fetched_revids = []    # Compiled wikidot revision list (history)
 
         self.rev_no = 0             # Next revision to process
         self.last_names = {}        # Tracks page renames: name atm -> last name in repo
@@ -45,6 +46,15 @@ class RepoMaintainer:
 
         self.repo = None            # Git repo object
         self.index = None           # Git current index object
+        self.max_depth = 10000      # download at most this number of revisions
+        self.max_page_count = 10000 # download at most this number of pages
+
+        self.pbar = None
+        self.first_fetched = 0      # For progress bar
+        self.fetched_revids = set()
+
+        self.revs_to_skip = []
+        self.pages_to_skip = []
 
 
     #
@@ -71,7 +81,20 @@ class RepoMaintainer:
         fp.close()
 
     def loadFetchedRevids(self):
-        self.fetched_revids = [line.rstrip() for line in open(self.path+'/.fetched.txt', 'r')]
+        self.fetched_revids = set([line.rstrip() for line in open(self.path+'/.fetched.txt', 'r')])
+
+    def saveFailedImages(self):
+        file_path = self.path + '/.failed-images.txt'
+        fp = open(file_path, 'w')
+        for failed in self.wd.failed_images:
+            fp.write(failed + '\n')
+        fp.close()
+
+    def loadFailedImages(self):
+        file_path = self.path + '/.failed-images.txt'
+        if not os.path.isfile(file_path):
+            return
+        self.wd.failed_images = set([line.rstrip() for line in open(file_path, 'r')])
 
     # Persistent metadata about the repo:
     #  - Tracks page renames: name atm -> last name in repo
@@ -99,17 +122,13 @@ class RepoMaintainer:
     #
     # Compiles a combined revision list for a given set of pages, or all pages on the site.
     #  pages: compile history for these pages
-    #  depth: download at most this number of revisions
     #  category: get from these category(s)
     #  tags: get from these tag(s)
     #
     # If there exists a cached revision list at the repository destination,
     # it is loaded and no requests are made.
     #
-    def buildRevisionList(self, pages = None, depth = 10000, category = None, tags = None, created_by = None):
-        if os.path.isfile(self.path+'/.metadata.json'):
-            self.loadMetadata()
-
+    def buildRevisionList(self, pages = None, category = None, tags = None, created_by = None):
         self.category = category if category else (self.category if self.category else '.')
         self.tags = tags if tags else (self.tags if self.tags else None)
         self.created_by = created_by if created_by else (self.created_by if self.created_by else None)
@@ -124,9 +143,9 @@ class RepoMaintainer:
 
         if os.path.isfile(self.path+'/.fetched.txt'):
             self.loadFetchedRevids()
-            print(self.fetched_revids)
+            print(len(self.fetched_revids), 'revisions already fetched')
         else:
-            self.fetched_revids = []
+            self.fetched_revids = set()
 
         if self.debug:
             print("Building revision list...")
@@ -139,34 +158,29 @@ class RepoMaintainer:
                 fp.close()
 
 
-            if not pages:
+            if not pages or len(pages) < self.max_page_count:
                 if self.debug:
                     print('Need to fetch pages')
-                pages = self.wd.list_pages(10000, self.category, self.tags, self.created_by)
+                pages = self.wd.list_pages(self.max_page_count, self.category, self.tags, self.created_by)
                 self.savePages(pages)
             elif self.debug:
                 print(len(pages), 'pages loaded')
 
-        fetched_pages = []
+        fetched_pages = set()
 
-        if self.debug:
-            print('Collecting already pages we already got revisions for')
-
-        # TODO: I don't know python, but this is highly suboptimal (and takes a ton of time)
-        # Should use a set/hashmap/whatever python calls it
-        for wrev in self.wrevs:
+        for wrev in tqdm(self.wrevs, desc='Collecting pages we already got revisions for'):
             page_name = wrev['page_name']
 
             if page_name in fetched_pages:
                 continue
 
-            fetched_pages.append(page_name)
+            fetched_pages.add(page_name)
 
         if self.debug:
             print("Already fetched revisions for " + str(len(fetched_pages)) + " of " + str(len(pages)))
 
         fetched = 0
-        for page in pages:
+        for page in tqdm(pages, desc='Updating list of revisions to fetch'):
             if page in fetched_pages:
                 continue
 
@@ -176,8 +190,6 @@ class RepoMaintainer:
                     print("Skipping", page)
                 continue
 
-            if self.debug:
-                print("Querying page: " + page + " " + str(fetched) + "/" + str(len(pages) - len(fetched_pages)))
             fetched += 1
             page_id = self.wd.get_page_id(page)
 
@@ -188,16 +200,14 @@ class RepoMaintainer:
                 print('Page gone?', page)
                 continue
 
-            revs = self.wd.get_revisions(page_id, depth)
-            print("Revisions to fetch: "+str(len(revs)))
+            revs = self.wd.get_revisions(page_id=page_id, limit=self.max_depth)
             for rev in revs:
                 if rev['id'] in self.fetched_revids:
-                    print(rev['id'], 'already fetched')
                     continue
 
                 self.wrevs.append({
                   'page_id' : page_id,
-                  'page_name' : page, # name atm, not at revision time
+                  'page_name' : page, # current name, not at revision time (revisions can rename them)
                   'rev_id' : rev['id'],
                   'flag' : rev['flag'],
                   'date' : rev['date'],
@@ -205,6 +215,11 @@ class RepoMaintainer:
                   'comment' : rev['comment'],
                 })
             self.saveWRevs() # Save a cached copy
+
+        print("Number of revisions already fetched", len(self.fetched_revids), len(self.wrevs))
+
+        if os.path.isfile(self.path+'/.metadata.json'):
+            self.loadMetadata()
 
         print("")
 
@@ -235,6 +250,8 @@ class RepoMaintainer:
         fp.close()
 
     def loadState(self):
+        if not os.path.isfile(self.path+'/.wstate'):
+            return
         fp = open(self.path+'/.wstate', 'rb')
         self.rev_no = pickle.load(fp)
         fp.close()
@@ -249,8 +266,9 @@ class RepoMaintainer:
         # Create a new repository or continue from aborted dump
         self.last_names = {} # Tracks page renames: name atm -> last name in repo
         self.last_parents = {} # Tracks page parent names: name atm -> last parent in repo
+        self.loadFailedImages()
 
-        if os.path.isfile(self.path+'/.git'):
+        if os.path.isdir(self.path+'/.git'):
             print("Continuing from aborted dump state...")
             self.loadState()
             self.repo = Repo(self.path)
@@ -263,8 +281,8 @@ class RepoMaintainer:
 
             if self.storeRevIds:
                 # Add revision id file to the new repo
-                fname = '/.revid'
-                codecs.open(self.path + fname, "w", "UTF-8").close()
+                fname = '.revid'
+                codecs.open(self.path + '/' + fname, "w", "UTF-8").close()
                 self.repo.index.add([fname])
                 self.index.commit("Initial creation of repo")
         self.index = self.repo.index
@@ -273,7 +291,7 @@ class RepoMaintainer:
     # Takes an unprocessed revision from a revision log, fetches its data and commits it.
     # Returns false if no unprocessed revisions remain.
     #
-    def commitNext(self):
+    def commitNext(self, rev):
         if self.rev_no >= len(self.wrevs):
             return False
 
@@ -283,12 +301,18 @@ class RepoMaintainer:
         unixname = rev['page_name']
 
         if rev['rev_id'] in self.fetched_revids:
-            if self.debug:
-                print(rev['rev_id'], 'already fetched')
-
             self.rev_no += 1
 
             self.saveState() # Update operation state
+            return True
+
+        if rev['rev_id'] in self.revs_to_skip:
+            print("Skipping", rev)
+            return True
+
+        unixname = rev['page_name']
+        if unixname in self.pages_to_skip:
+            print("Skipping", rev)
             return True
 
         source = self.wd.get_revision_source(rev['rev_id'])
@@ -334,10 +358,17 @@ class RepoMaintainer:
         if rev['comment'].startswith('Parent page set to: "'):
             # This is a parenting revision, remember the new parent
             parent_unixname = rev['comment'][21:-2]
+            if self.debug:
+                print('Parent changed', parent_unixname)
             self.last_parents[unixname] = parent_unixname
         else:
             # Else use last parent_unixname we've recorded
             parent_unixname =  self.last_parents[unixname] if unixname in self.last_parents else None
+
+        ## TODO: test#APIs
+        #if rev['comment'].startswith('Removed tags: ') or rev['comment'].startswith('Added tags: '):
+        #    self.updateTags(rev['comment'], rev_unixname)
+
         # There are also problems when parent page gets renamed -- see updateChildren
 
         # If the page is tracked and its name just changed, tell Git
@@ -400,11 +431,20 @@ class RepoMaintainer:
             commit_date = None
 
         got_images = False;
+
+        # Add some spacing in the commit message
+        if len(details['images']) > 0:
+            commit_msg += '\n'
+
         for image in details['images']:
             if self.wd.maybe_download_file(image['src'], self.path + '/' + image['filepath']):
+                commit_msg += '\nAdded image: ' + image['src']
                 got_images = True
                 # If we do this gitpython barfs on itself
                 #added_file_paths.append(image['filepath'])
+            else:
+                self.saveFailedImages()
+
 
         if got_images:
             added_file_paths.append("images")
@@ -425,13 +465,20 @@ class RepoMaintainer:
         if self.debug:
             print('Committed', commit.name_rev, 'by', author)
 
-        self.fetched_revids.append(rev['rev_id'])
+        self.fetched_revids.add(rev['rev_id'])
 
         self.rev_no += 1
         self.saveState() # Update operation state
 
         return True
 
+    def fetchAll(self):
+        to_fetch = []
+        for rev in tqdm(self.wrevs, desc='Creating list of revisions to fetch'):
+            if rev['rev_id'] not in self.fetched_revids:
+                to_fetch.append(rev)
+        for rev in tqdm(to_fetch, desc='Downloading'):
+            self.commitNext(rev)
 
     #
     # Updates all children of the page to reflect parent's unixname change.
@@ -443,9 +490,54 @@ class RepoMaintainer:
     # Therefore, on every rename we must update all linked children in the same revision.
     #
     def updateChildren(self, oldunixname, newunixname):
+        if self.debug:
+            print('Updating parents for', oldunixname, newunixname)
+
         for child in list(self.last_parents.keys()):
-            if self.last_parents[child] == oldunixname:
+            if self.last_parents[child] == oldunixname and self.last_parents[child] != newunixname:
                 self.updateParentField(child, self.last_parents[child], newunixname)
+
+    def updateTags(self, comment, unixname):
+        file_name = self.path+'/'+unixname+'.txt'
+        removed = []
+        removed_match = re.search(pattern = r'Removed tags: ([^.]+,?)\.')
+        if removed_match is not None:
+            removed = removed_match.group(1).split(', ')
+
+        tags = []
+
+        with codecs.open(file_name, "r", "UTF-8") as f:
+            content = f.readlines()
+
+        tagsline = None
+        for line in content:
+            if line.startswith('tags:'):
+                tagsline = line
+                break
+
+        # Father forgive me for the indentation depth
+        idx = -1
+        if tagsline is not None:
+            idx = content.index(tagsline)
+            for tag in tagsline.split(','):
+                if not tag in removed:
+                    tags.append(tag)
+
+
+        added_match = re.search(pattern = r'Added tags: ([^.]+,?)\.')
+        if added_match is not None:
+            tags += added_match.group(1).split(', ')
+
+        tags.sort()
+
+        newtagsline = 'tags:' + ','.join(tags) + '\n'
+        if idx != -1:
+            contents[idx] = newtagsline
+        else:
+            contents = newtagsline + contents
+
+        with codecs.open(file_name, "w", "UTF-8") as f:
+            f.writelines(content)
 
     #
     # Processes a page file and updates "parent:..." string to reflect a change in parent's unixname.
@@ -454,7 +546,11 @@ class RepoMaintainer:
     def updateParentField(self, child_unixname, parent_oldunixname, parent_newunixname):
         child_winsafename = child_unixname.replace(':','~')
         parent_winsafename = parent_oldunixname.replace(':','~')
-        with codecs.open(self.path+'/'+child_winsafename+'.txt', "r", "UTF-8") as f:
+        child_path = self.path+'/'+child_winsafename+'.txt'
+        if not os.path.isfile(child_path):
+            print('Failed to find child file!', child_path)
+            return
+        with codecs.open(child_path, "r", "UTF-8") as f:
             content = f.readlines()
         # Since this is all tracked by us, we KNOW there's a line in standard format somewhere
         idx = content.index('parent:'+parent_oldunixname+'\n')

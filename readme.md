@@ -18,6 +18,8 @@ At least:
 * Python 3
 * python-beautifulsoup4
 * python-gitpython
+* python-requests
+* python-tqdm
 
 ##### Examples:
 
@@ -41,3 +43,8 @@ The descriptions for on-site modules are heavily correlated with AJAX ones:
 Someone else did Wikidot AJAX:
 
 * https://github.com/kerel-fs/ogn-rdb/blob/master/wikidotcrawler.py
+
+
+#### TODO
+
+ - Handle deleted images. Probably need to check the diff and check all pages for references if removed from one page.
