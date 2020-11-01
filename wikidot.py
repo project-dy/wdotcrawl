@@ -592,6 +592,21 @@ class Wikidot:
             if img_path == "" or img_path[-1] == "/":
                 img_path += img_name
 
+            # Fix invalid image path with '//' in the url or duplicate 'http://'
+            # Those were true stories, don't ask
+            if 'http://' in img_path:
+                img_src = img_src.replace('http://http://', 'http://')
+                img_path = img_path.replace('http://', '')
+            if 'https://' in img_path:
+                img_src = img_src.replace('https://https://', 'https://')
+                img_path = img_path.replace('https://', '')
+            if '//' in img_path:
+                img_path = img_path.replace('//', '/')
+
+            # And colon is invalid character on windows
+            if ':' in img_path:
+                img_path = img_path.replace(':', '~')
+
             images.append({"src": img_src, "filename": img_name, "filepath": "images/" + img_path})
 
 
