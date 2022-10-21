@@ -13,13 +13,10 @@ Most interestingly, it allows you to download the whole site as a Git repository
 
 ##### Dependencies
 
-At least:
-
-* Python 3
-* python-beautifulsoup4
-* python-gitpython
-* python-requests
-* python-tqdm
+You can install the dependencies using 
+```bash
+pip install -r requirements.txt
+```
 
 ##### Examples:
 
