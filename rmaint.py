@@ -33,6 +33,8 @@ class RepoMaintainer:
         self.path = path            # Path to repository
         self.debug = False          # = True to enable more printing
         self.storeRevIds = True     # = True to store .revid with each commit
+        self.use_ftml = True        # Shether to use the new FTML format instead of plain text
+        self.prev_use_ftml = None   # Whether we have used FTML format in previous runs
 
         # Internal state
         self.wrevs = None           # Compiled wikidot revision list (history)
@@ -103,7 +105,14 @@ class RepoMaintainer:
     #  - Tracks category: settings for category(s) to get from
     #  - Tracks tags: settings for tag(s) to get from
     def saveMetadata(self):
-        metadata = { 'category': self.category, 'tags': self.tags, 'created_by': self.created_by, 'names': self.last_names, 'parents': self.last_parents }
+        metadata = {
+            'category': self.category,
+            'tags': self.tags,
+            'created_by': self.created_by,
+            'names': self.last_names,
+            'parents': self.last_parents,
+            'use_ftml': self.use_ftml
+        }
         fp = open(self.path+'/.metadata.json', 'w')
         json.dump(metadata, fp)
         fp.close()
@@ -116,6 +125,7 @@ class RepoMaintainer:
         self.created_by = metadata['created_by']
         self.last_names = metadata['names']
         self.last_parents = metadata['parents']
+        self.prev_use_ftml = metadata['use_ftml'] if 'use_ftml' in metadata else None
         fp.close()
 
         self.loadFetchedRevids()
@@ -132,6 +142,7 @@ class RepoMaintainer:
         self.category = category if category else (self.category if self.category else '.')
         self.tags = tags if tags else (self.tags if self.tags else None)
         self.created_by = created_by if created_by else (self.created_by if self.created_by else None)
+        self.use_ftml = self.use_ftml if self.use_ftml is not None else (self.prev_use_ftml if self.prev_use_ftml is not None else True)
 
         if os.path.isfile(self.path+'/.wrevs'):
             print("Loading cached revision list...")
@@ -354,7 +365,8 @@ class RepoMaintainer:
         rev_winsafename = rev_unixname.replace(':','~') # windows-safe name in revision
 
         # Unfortunately, there's no exposed way in Wikidot to see page breadcrumbs at any point in history.
-        # The only way to know they were changed is revision comments, though evil people may trick us.
+        # One way to know they were changed is by comparing revisions, but that require a request for each revision.
+        # Another way is revision comments, though evil people may trick us.
         if rev['comment'].startswith('Parent page set to: "'):
             # This is a parenting revision, remember the new parent
             parent_unixname = rev['comment'][21:-2]
@@ -372,7 +384,9 @@ class RepoMaintainer:
         # There are also problems when parent page gets renamed -- see updateChildren
 
         # If the page is tracked and its name just changed, tell Git
-        fname = str(rev_winsafename) + '.txt'
+        fname = str(rev_winsafename)
+        if (self.use_ftml): fname = fname + '.ftml'
+        else: fname = fname + '.txt' # legacy format
         rename = (unixname in self.last_names) and (self.last_names[unixname] != rev_unixname)
 
         commit_msg = ""
@@ -380,7 +394,9 @@ class RepoMaintainer:
         added_file_paths = []
 
         if rename:
-            name_rename_from = str(self.last_names[unixname]).replace(':','~')+'.txt'
+            name_rename_from = str(self.last_names[unixname]).replace(':','~')
+            if (self.use_ftml): name_rename_from = name_rename_from + '.ftml'
+            else: name_rename_from = name_rename_from + '.txt' # legacy format
 
             if self.debug:
                 print("Moving renamed", name_rename_from, "to", fname)
@@ -406,12 +422,18 @@ class RepoMaintainer:
 
         # Ouput contents
         outp = codecs.open(self.path + '/' + fname, "w", "UTF-8")
+        if self.use_ftml:
+            outp.write('---\n')
+            outp.write('site: ' + self.wd.site+'\n')
+            outp.write('page: ' + details['unixname']+'\n')
         if details['title']:
-            outp.write('title:' + details['title']+'\n')
+            outp.write('title: ' + details['title']+'\n')
         if tags:
-            outp.write('tags:'+' '.join(tags)+'\n')
+            outp.write('tags: '+' '.join(tags)+'\n')
         if parent_unixname:
-            outp.write('parent:'+parent_unixname+'\n')
+            outp.write('parent: '+parent_unixname+'\n')
+        if self.use_ftml:
+            outp.write('---\n')
         outp.write(source)
         outp.close()
 
@@ -430,7 +452,7 @@ class RepoMaintainer:
         else:
             commit_date = None
 
-        got_images = False;
+        got_images = False
 
         # Add some spacing in the commit message
         if len(details['images']) > 0:
@@ -471,6 +493,51 @@ class RepoMaintainer:
         self.saveState() # Update operation state
 
         return True
+
+    def convertFormat(self, use_ftml = True):
+        # This method support conversion both ways
+        # but in practice we only allow migrating to new format and not backwards
+        pages = None
+        added_file_paths = []
+        commit_msg = "Convert from " + ("txt" if use_ftml else "ftml") + " to " + ("ftml" if use_ftml else "txt")
+        if os.path.isfile(self.path+'/.pages'):
+            print('Loading fetched pages')
+            fp = open(self.path+'/.pages', 'rb')
+            pages = pickle.load(fp)
+            fp.close()
+        for page in tqdm(pages, desc='Loading list of pages to convert format'):
+            if use_ftml:
+                if os.path.isfile(self.path+'/'+page+'.txt'):
+                    fname = self.path+'/'+page+'.txt'
+                    with codecs.open(fname, "r", "UTF-8") as f:
+                        content = f.readlines()
+                    if not content[0].startswith('---'):
+                        # Extracting all metadata and enclose them in YAML FrontMatter format
+                        idx = 0
+                        while (content[idx].startswith('site:') or content[idx].startswith('page:') or content[idx].startswith('title:') or
+                            content[idx].startswith('tags:') or content[idx].startswith('parent:')):
+                            idx+=1
+                        content.insert(idx, '---\n')
+                        for i in range(idx):
+                            if content[content[i].index(':')+1] != ' ':
+                                split = content[i].split(':')
+                                split[0] = split[0]+' '
+                                content[i] = ':'.join(split)
+                        content.insert(0, '---\n')
+                        with codecs.open(self.path+'/'+page+'.txt', "w", "UTF-8") as f:
+                            f.writelines(content)
+                    self.index.move([page+'.txt', page+'.ftml'], force=True)
+                    added_file_paths.append(str(page+'.ftml'))
+            else:
+                if os.path.isfile(self.path+'/'+page+'.ftml'):
+                    self.index.move([page+'.ftml', page+'.txt'], force=True)
+                    added_file_paths.append(str(page+'.txt'))
+        self.index.add(added_file_paths)
+
+        commit = self.index.commit(commit_msg)
+
+        if self.debug:
+            print('Committed', commit.name_rev, 'for format conversion')
 
     def fetchAll(self):
         to_fetch = []
@@ -530,7 +597,7 @@ class RepoMaintainer:
 
         tags.sort()
 
-        newtagsline = 'tags:' + ','.join(tags) + '\n'
+        newtagsline = 'tags: ' + ','.join(tags) + '\n'
         if idx != -1:
             contents[idx] = newtagsline
         else:
@@ -540,7 +607,7 @@ class RepoMaintainer:
             f.writelines(content)
 
     #
-    # Processes a page file and updates "parent:..." string to reflect a change in parent's unixname.
+    # Processes a page file and updates "parent: ..." string to reflect a change in parent's unixname.
     # The rest of the file is preserved.
     #
     def updateParentField(self, child_unixname, parent_oldunixname, parent_newunixname):
@@ -553,11 +620,13 @@ class RepoMaintainer:
         with codecs.open(child_path, "r", "UTF-8") as f:
             content = f.readlines()
         # Since this is all tracked by us, we KNOW there's a line in standard format somewhere
-        idx = content.index('parent:'+parent_oldunixname+'\n')
+        idx = content.index('parent: '+parent_oldunixname+'\n')
+        if idx < 0:
+            idx = content.index('parent:'+parent_oldunixname+'\n')
         if idx < 0:
             raise Exception("Cannot update child page "+child_unixname+": "
-                +"it is expected to have parent set to "+parent_oldunixname+", but there seems to be no such record in it.");
-        content[idx] = 'parent:'+parent_newunixname+'\n'
+                +"it is expected to have parent set to "+parent_oldunixname+", but there seems to be no such record in it.")
+        content[idx] = 'parent: '+parent_newunixname+'\n'
         with codecs.open(self.path+'/'+child_winsafename+'.txt', "w", "UTF-8") as f:
             f.writelines(content)
 

@@ -20,7 +20,7 @@ pip install -r requirements.txt
 
 ##### Examples:
 
-    crawl.py http://example.wikidot.com --dump ExampleRepo
+    crawl.py http://example.wikidot.com --dump ExampleRepo --use-ftml
     crawl.py http://example.wikidot.com --log --page example-page
 
 It uses internal Wikidot AJAX requests to do its job. If you're from Wikidot, please don't break it. Thank you! We'll try to be nice and not put a load on your servers.
@@ -41,6 +41,9 @@ Someone else did Wikidot AJAX:
 
 * https://github.com/kerel-fs/ogn-rdb/blob/master/wikidotcrawler.py
 
+The FTML format tailored for Wikidot-styled metadata and page source code:
+
+* https://gist.github.com/Zokhoi/06dbc890a4f2fab3eadcd7d2ed0d8698
 
 #### TODO
 

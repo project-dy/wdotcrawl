@@ -22,6 +22,7 @@ parser.add_argument('--source', action='store_true', help='Print page source (re
 parser.add_argument('--content', action='store_true', help='Print page content (requires --page)')
 parser.add_argument('--log', action='store_true', help='Print page revision log (requires --page)')
 parser.add_argument('--dump', type=str, help='Download page revisions to this directory')
+# parser.add_argument('--convert-format', action='store_true', help='Convert save files format between legacy .txt and new .ftml')
 # Debug actions
 parser.add_argument('--list-pages-raw', action='store_true')
 parser.add_argument('--log-raw', action='store_true')
@@ -36,6 +37,7 @@ parser.add_argument('--creator', type=str, default=None, help='Selecting page cr
 parser.add_argument('--skip', type=str, help='Skip the specified revision')
 parser.add_argument('--skip-pages', type=str, help='Skip the specified pages')
 parser.add_argument('--cleanup', action='store_true', help='Clean up after downloading repo')
+parser.add_argument('--use-ftml', action='store_true', help='Use the new .ftml format for saving crawled pages instead of the legacy .txt format')
 # Common settings
 parser.add_argument('--debug', action='store_true', help='Print debug info')
 parser.add_argument('--delay', type=int, default='200', help='Delay between consequent calls to Wikidot')
@@ -132,6 +134,7 @@ elif args.dump:
     rm.storeRevIds = args.revids
     rm.max_depth = args.depth
     rm.max_page_count = args.max_page_count
+    rm.use_ftml = args.use_ftml
     rm.buildRevisionList([args.page] if args.page else None, args.category, args.tags, args.creator)
     rm.openRepo()
 
@@ -139,6 +142,9 @@ elif args.dump:
         rm.pages_to_skip = args.skip_pages.split(",")
     if args.skip:
         rm.revs_to_skip = args.skip.split(",")
+    
+    if (rm.use_ftml and (rm.use_ftml != rm.prev_use_ftml)):
+        rm.convertFormat()
 
     print("Downloading revisions")
     rm.fetchAll()

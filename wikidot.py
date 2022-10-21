@@ -63,7 +63,7 @@ class Wikidot:
             headers = requests.utils.default_headers()
             # Pretty generic user-agent, but we append a unique none for us
             # Makes wikimedia happy
-            headers.update({ "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.9; rv:32.0) Gecko/20100101 Firefox/32.0 wdotcrawler/1.0"})
+            headers.update({ "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0 wdotcrawler/1.0", "Referer": "wdotcrawler" })
             start = timer()
 
             try:
@@ -117,7 +117,7 @@ class Wikidot:
                 return True
             except OSError as e:
                 if e.errno == 36:
-                    print("Filename to long", e)
+                    print("Filename too long", e)
                     return False
                 else:
                     raise  # re-raise previously caught exception
@@ -140,7 +140,7 @@ class Wikidot:
 
     # Makes a Wikidot AJAX query. Returns the response+title or throws an error.
     def queryex(self, params, urlAppend = None):
-        token = "".join(random.choice('abcdefghijklmnopqrstuvwxyz0123456789') for i in range(8))
+        token = "".join(random.choice('abcdefghijklmnopqrstuvwxyz0123456789') for i in range(10))
         cookies = {"wikidot_token7": token}
         params['wikidot_token7'] = token
 
