@@ -27,7 +27,7 @@ from tqdm import tqdm # for progress bar
 # Talkative.
 
 class RepoMaintainer:
-    def __init__(self, wikidot, path):
+    def __init__(self, wikidot, path, progress_callback=None):
         # Settings
         self.wd = wikidot           # Wikidot instance
         self.path = path            # Path to repository
@@ -35,6 +35,7 @@ class RepoMaintainer:
         self.storeRevIds = True     # = True to store .revid with each commit
         self.use_ftml = True        # Shether to use the new FTML format instead of plain text
         self.prev_use_ftml = None   # Whether we have used FTML format in previous runs
+        self.progress_callback = progress_callback
 
         # Internal state
         self.wrevs = None           # Compiled wikidot revision list (history)
@@ -145,25 +146,37 @@ class RepoMaintainer:
         self.use_ftml = self.use_ftml if self.use_ftml is not None else (self.prev_use_ftml if self.prev_use_ftml is not None else True)
 
         if os.path.isfile(self.path+'/.wrevs'):
-            print("Loading cached revision list...")
+            tqdm.write("Loading cached revision list...")
+            if self.progress_callback:
+                self.progress_callback("Loading cached revision list...")
             self.loadWRevs()
         else:
             self.wrevs = []
             if self.debug:
-                print('No existing wrevs')
+                tqdm.write('No existing wrevs')
+                if self.progress_callback:
+                    self.progress_callback('No existing wrevs')
 
         if os.path.isfile(self.path+'/.fetched.txt'):
             self.loadFetchedRevids()
-            print(len(self.fetched_revids), 'revisions already fetched')
+            tqdm.write(f"{len(self.fetched_revids)} revisions already fetched")
+            if self.progress_callback:
+                self.progress_callback(f"{len(self.fetched_revids)} revisions already fetched")
         else:
             self.fetched_revids = set()
 
         if self.debug:
-            print("Building revision list...")
+            tqdm.write("Building revision list...")
+            if self.progress_callback:
+                self.progress_callback("Building revision list...")
+
+        fetched_pages = set()
 
         if not pages:
             if os.path.isfile(self.path+'/.pages'):
-                print('Loading fetched pages')
+                tqdm.write('Loading fetched pages')
+                if self.progress_callback:
+                    self.progress_callback('Loading fetched pages')
                 fp = open(self.path+'/.pages', 'rb')
                 pages = pickle.load(fp)
                 fp.close()
@@ -171,15 +184,20 @@ class RepoMaintainer:
 
             if not pages or len(pages) < self.max_page_count:
                 if self.debug:
-                    print('Need to fetch pages')
+                    tqdm.write('Need to fetch pages')
+                    if self.progress_callback:
+                        self.progress_callback('Need to fetch pages')
                 pages = self.wd.list_pages(self.max_page_count, self.category, self.tags, self.created_by)
                 self.savePages(pages)
             elif self.debug:
-                print(len(pages), 'pages loaded')
+                tqdm.write(f"{len(pages)} pages loaded")
+                if self.progress_callback:
+                    self.progress_callback(f"{len(pages)} pages loaded")
 
-        fetched_pages = set()
-
-        for wrev in tqdm(self.wrevs, desc='Collecting pages we already got revisions for'):
+        total_wrevs_collect = len(self.wrevs)
+        for i, wrev in enumerate(tqdm(self.wrevs, desc='Collecting pages we already got revisions for', disable=self.progress_callback is not None)):
+            if self.progress_callback:
+                self.progress_callback(f"Collecting pages with revisions: {i+1}/{total_wrevs_collect}")
             page_name = wrev['page_name']
 
             if page_name in fetched_pages:
@@ -188,27 +206,38 @@ class RepoMaintainer:
             fetched_pages.add(page_name)
 
         if self.debug:
-            print("Already fetched revisions for " + str(len(fetched_pages)) + " of " + str(len(pages)))
+            tqdm.write(f"Already fetched revisions for {len(fetched_pages)} of {len(pages)}")
+            if self.progress_callback:
+                self.progress_callback(f"Already fetched revisions for {len(fetched_pages)} of {len(pages)}")
 
         fetched = 0
-        for page in tqdm(pages, desc='Updating list of revisions to fetch'):
+        total_pages_to_fetch = len(pages)
+        for i, page in enumerate(tqdm(pages, desc='Updating list of revisions to fetch', disable=self.progress_callback is not None)):
+            if self.progress_callback:
+                self.progress_callback(f"Updating list of revisions to fetch: {i+1}/{total_pages_to_fetch}")
             if page in fetched_pages:
                 continue
 
             # TODO: more generic blacklisting
             if page == "sandbox":
                 if self.debug:
-                    print("Skipping", page)
+                    tqdm.write(f"Skipping {page}")
+                    if self.progress_callback:
+                        self.progress_callback(f"Skipping {page}")
                 continue
 
             fetched += 1
             page_id = self.wd.get_page_id(page)
 
             if self.debug:
-                print(("ID: "+str(page_id)))
+                tqdm.write(f"ID: {page_id}")
+                if self.progress_callback:
+                    self.progress_callback(f"ID: {page_id}")
 
             if page_id is None:
-                print('Page gone?', page)
+                tqdm.write(f'Page gone? {page}')
+                if self.progress_callback:
+                    self.progress_callback(f'Page gone? {page}')
                 continue
 
             revs = self.wd.get_revisions(page_id=page_id, limit=self.max_depth)
@@ -227,29 +256,46 @@ class RepoMaintainer:
                 })
             self.saveWRevs() # Save a cached copy
 
-        print("Number of revisions already fetched", len(self.fetched_revids), len(self.wrevs))
+        tqdm.write(f"Number of revisions already fetched {len(self.fetched_revids)} {len(self.wrevs)}")
+        if self.progress_callback:
+            self.progress_callback(f"Number of revisions already fetched {len(self.fetched_revids)} {len(self.wrevs)}")
 
         if os.path.isfile(self.path+'/.metadata.json'):
             self.loadMetadata()
 
-        print("")
+        tqdm.write("")
+        if self.progress_callback:
+            self.progress_callback("")
 
-        print(("Total revisions: "+str(len(self.wrevs))))
+        tqdm.write(f"Total revisions: {len(self.wrevs)}")
+        if self.progress_callback:
+            self.progress_callback(f"Total revisions: {len(self.wrevs)}")
 
         if self.debug:
-            print("Sorting revisions...")
+            tqdm.write("Sorting revisions...")
+            if self.progress_callback:
+                self.progress_callback("Sorting revisions...")
 
         self.wrevs.sort(key=lambda rev: rev['date'])
 
         if self.debug:
             if len(self.wrevs) < 100:
-                print("")
-                print("Revision list: ")
+                tqdm.write("")
+                tqdm.write("Revision list: ")
+                if self.progress_callback:
+                    self.progress_callback("")
+                    self.progress_callback("Revision list: ")
                 for rev in self.wrevs:
-                    print((str(rev)+"\n"))
-                print("")
+                    tqdm.write(str(rev)+"\n")
+                    if self.progress_callback:
+                        self.progress_callback(str(rev)+"\n")
+                tqdm.write("")
+                if self.progress_callback:
+                    self.progress_callback("")
             else:
-                print("Too many revisions, not printing everything")
+                tqdm.write("Too many revisions, not printing everything")
+                if self.progress_callback:
+                    self.progress_callback("Too many revisions, not printing everything")
 
 
     #
@@ -280,13 +326,17 @@ class RepoMaintainer:
         self.loadFailedImages()
 
         if os.path.isdir(self.path+'/.git'):
-            print("Continuing from aborted dump state...")
+            tqdm.write("Continuing from aborted dump state...")
+            if self.progress_callback:
+                self.progress_callback("Continuing from aborted dump state...")
             self.loadState()
             self.repo = Repo(self.path)
             assert not self.repo.bare
 
         else: # create a new repository (will fail if one exists)
-            print("Initializing repository...")
+            tqdm.write("Initializing repository...")
+            if self.progress_callback:
+                self.progress_callback("Initializing repository...")
             self.repo = Repo.init(self.path)
             self.rev_no = 0
 
@@ -318,12 +368,16 @@ class RepoMaintainer:
             return True
 
         if rev['rev_id'] in self.revs_to_skip:
-            print("Skipping", rev)
+            tqdm.write(f"Skipping {rev}")
+            if self.progress_callback:
+                self.progress_callback(f"Skipping {rev}")
             return True
 
         unixname = rev['page_name']
         if unixname in self.pages_to_skip:
-            print("Skipping", rev)
+            tqdm.write(f"Skipping {rev}")
+            if self.progress_callback:
+                self.progress_callback(f"Skipping {rev}")
             return True
 
         source = self.wd.get_revision_source(rev['rev_id'])
@@ -371,7 +425,9 @@ class RepoMaintainer:
             # This is a parenting revision, remember the new parent
             parent_unixname = rev['comment'][21:-2]
             if self.debug:
-                print('Parent changed', parent_unixname)
+                tqdm.write(f'Parent changed {parent_unixname}')
+                if self.progress_callback:
+                    self.progress_callback(f'Parent changed {parent_unixname}')
             self.last_parents[unixname] = parent_unixname
         else:
             # Else use last parent_unixname we've recorded
@@ -399,7 +455,9 @@ class RepoMaintainer:
             else: name_rename_from = name_rename_from + '.txt' # legacy format
 
             if self.debug:
-                print("Moving renamed", name_rename_from, "to", fname)
+                tqdm.write(f"Moving renamed {name_rename_from} to {fname}")
+                if self.progress_callback:
+                    self.progress_callback(f"Moving renamed {name_rename_from} to {fname}")
 
             self.updateChildren(self.last_names[unixname], rev_unixname) # Update children which reference us -- see comments there
 
@@ -408,13 +466,17 @@ class RepoMaintainer:
                 self.index.move([name_rename_from, fname], force=True)
                 commit_msg += "Renamed from " + str(self.last_names[unixname]) + ' to ' + str(rev_unixname) + ' '
             else:
-                print("Source file does not exist, probably deleted or renamed from already?", name_rename_from)
+                tqdm.write(f"Source file does not exist, probably deleted or renamed from already? {name_rename_from}")
+                if self.progress_callback:
+                    self.progress_callback(f"Source file does not exist, probably deleted or renamed from already? {name_rename_from}")
 
         # Add new page
         elif not os.path.isfile(self.path + '/' + fname): # never before seen
             commit_msg += "Created "
             if self.debug:
-                print("Adding", fname)
+                tqdm.write(f"Adding {fname}")
+                if self.progress_callback:
+                    self.progress_callback(f"Adding {fname}")
         elif rev['comment'] == '':
             commit_msg += "Updated "
 
@@ -470,7 +532,9 @@ class RepoMaintainer:
 
         if got_images:
             added_file_paths.append("images")
-        print("Committing: " + str(self.rev_no) + '. '+commit_msg)
+        tqdm.write(f"Committing: {self.rev_no}. {commit_msg}")
+        if self.progress_callback:
+            self.progress_callback(f"Committing: {self.rev_no}. {commit_msg}")
 
         # Include metadata in the commit (if changed)
         self.appendFetchedRevid(rev['rev_id'])
@@ -485,7 +549,9 @@ class RepoMaintainer:
         commit = self.index.commit(commit_msg, author=author, author_date=commit_date)
 
         if self.debug:
-            print('Committed', commit.name_rev, 'by', author)
+            tqdm.write(f'Committed {commit.name_rev} by {author}')
+            if self.progress_callback:
+                self.progress_callback(f'Committed {commit.name_rev} by {author}')
 
         self.fetched_revids.add(rev['rev_id'])
 
@@ -501,11 +567,16 @@ class RepoMaintainer:
         added_file_paths = []
         commit_msg = "Convert from " + ("txt" if use_ftml else "ftml") + " to " + ("ftml" if use_ftml else "txt")
         if os.path.isfile(self.path+'/.pages'):
-            print('Loading fetched pages')
+            tqdm.write('Loading fetched pages')
+            if self.progress_callback:
+                self.progress_callback('Loading fetched pages')
             fp = open(self.path+'/.pages', 'rb')
             pages = pickle.load(fp)
             fp.close()
-        for page in tqdm(pages, desc='Loading list of pages to convert format'):
+        total_pages_to_convert = len(pages)
+        for i, page in enumerate(tqdm(pages, desc='Loading list of pages to convert format', disable=self.progress_callback is not None)):
+            if self.progress_callback:
+                self.progress_callback(f"Converting format: {i+1}/{total_pages_to_convert}")
             if use_ftml:
                 if os.path.isfile(self.path+'/'+page+'.txt'):
                     fname = self.path+'/'+page+'.txt'
@@ -537,15 +608,26 @@ class RepoMaintainer:
         commit = self.index.commit(commit_msg)
 
         if self.debug:
-            print('Committed', commit.name_rev, 'for format conversion')
+            tqdm.write(f'Committed {commit.name_rev} for format conversion')
+            if self.progress_callback:
+                self.progress_callback(f'Committed {commit.name_rev} for format conversion')
 
     def fetchAll(self):
         to_fetch = []
-        for rev in tqdm(self.wrevs, desc='Creating list of revisions to fetch'):
+        total_wrevs = len(self.wrevs)
+        for i, rev in enumerate(tqdm(self.wrevs, desc='Creating list of revisions to fetch', disable=self.progress_callback is not None)):
+            if self.progress_callback:
+                self.progress_callback(f"Creating list of revisions to fetch: {i+1}/{total_wrevs}")
             if rev['rev_id'] not in self.fetched_revids:
                 to_fetch.append(rev)
-        for rev in tqdm(to_fetch, desc='Downloading'):
+        
+        total_to_fetch = len(to_fetch)
+        for i, rev in enumerate(tqdm(to_fetch, desc='Downloading', disable=self.progress_callback is not None)):
+            if self.progress_callback:
+                self.progress_callback(f"Downloading revisions: {i+1}/{total_to_fetch}")
             self.commitNext(rev)
+            if self.progress_callback:
+                self.progress_callback(f"Downloaded revision {rev['rev_id']}")
 
     #
     # Updates all children of the page to reflect parent's unixname change.
@@ -558,7 +640,9 @@ class RepoMaintainer:
     #
     def updateChildren(self, oldunixname, newunixname):
         if self.debug:
-            print('Updating parents for', oldunixname, newunixname)
+            tqdm.write(f'Updating parents for {oldunixname} {newunixname}')
+            if self.progress_callback:
+                self.progress_callback(f'Updating parents for {oldunixname} {newunixname}')
 
         for child in list(self.last_parents.keys()):
             if self.last_parents[child] == oldunixname and self.last_parents[child] != newunixname:
@@ -615,7 +699,9 @@ class RepoMaintainer:
         parent_winsafename = parent_oldunixname.replace(':','~')
         child_path = self.path+'/'+child_winsafename+'.txt'
         if not os.path.isfile(child_path):
-            print('Failed to find child file!', child_path)
+            tqdm.write(f'Failed to find child file! {child_path}')
+            if self.progress_callback:
+                self.progress_callback(f'Failed to find child file! {child_path}')
             return
         with codecs.open(child_path, "r", "UTF-8") as f:
             content = f.readlines()
@@ -638,12 +724,16 @@ class RepoMaintainer:
         if os.path.exists(self.path+'/.wstate'):
             os.remove(self.path+'/.wstate')
         else:
-            print("wstate does not exist?")
+            tqdm.write("wstate does not exist?")
+            if self.progress_callback:
+                self.progress_callback("wstate does not exist?")
 
         if os.path.exists(self.path+'/.wrevs'):
             os.remove(self.path+'/.wrevs')
         else:
-            print("wrevs does not exist?")
+            tqdm.write("wrevs does not exist?")
+            if self.progress_callback:
+                self.progress_callback("wrevs does not exist?")
 
         if os.path.exists(self.path+'/.pages'):
             os.remove(self.path+'/.pages')
