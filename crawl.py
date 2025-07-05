@@ -18,6 +18,7 @@ parser.add_argument('--list-pages', action='store_true', help='List all pages on
 parser.add_argument('--list-pages-no', action='store_true', help='List number of total pages on this site')
 parser.add_argument('--rates', action='store_true', help='Print page rates (requires --page)')
 parser.add_argument('--max-page-count', type=int, default='10000', help='Only list/fetch up to this amount of pages')
+
 parser.add_argument('--source', action='store_true', help='Print page source (requires --page)')
 parser.add_argument('--content', action='store_true', help='Print page content (requires --page)')
 parser.add_argument('--log', action='store_true', help='Print page revision log (requires --page)')
@@ -53,20 +54,20 @@ def force_dirs(path):
     os.makedirs(path, exist_ok=True)
 
 if args.list_pages_raw:
-    print((wd.list_pages_raw(args.max_pages_count, 1, args.category, args.tags)))
+    print((wd.list_pages_raw(args.max_page_count, 1, args.category, args.tags, args.creator)))
 
 elif args.list_pages:
-    for page in wd.list_pages(args.max_pages_count, args.category, args.tags):
+    for page in wd.list_pages(args.max_page_count, args.category, args.tags, args.creator):
         print(page)
 
 elif args.list_pages_no:
-    print(len(wd.list_pages(-1, args.category, args.tags)))
+    print(len(wd.list_pages(-1, args.category, args.tags, args.creator)))
 
 elif args.source:
     if not args.page:
         raise Exception("Please specify --page for --source.")
 
-    page_id = wd.get_page_id(page_unix_name=args.page)
+    page_id, _ = wd.get_page_id(page_unix_name=args.page)
     if not page_id:
         raise Exception("Page not found: "+args.page)
 
@@ -77,7 +78,7 @@ elif args.content:
     if not args.page:
         raise Exception("Please specify --page for --source.")
 
-    page_id = wd.get_page_id(page_unix_name=args.page)
+    page_id, _ = wd.get_page_id(page_unix_name=args.page)
     if not page_id:
         raise Exception("Page not found: "+args.page)
 
@@ -88,7 +89,7 @@ elif args.log_raw:
     if not args.page:
         raise Exception("Please specify --page for --log.")
 
-    page_id = wd.get_page_id(page_unix_name=args.page)
+    page_id, _ = wd.get_page_id(page_unix_name=args.page)
     if not page_id:
         raise Exception("Page not found: "+args.page)
 
@@ -99,7 +100,7 @@ elif args.log:
     if not args.page:
         raise Exception("Please specify --page for --log.")
 
-    page_id = wd.get_page_id(page_unix_name=args.page)
+    page_id, _ = wd.get_page_id(page_unix_name=args.page)
     if not page_id:
         raise Exception("Page not found: "+args.page)
     for rev in wd.get_revisions(page_id, args.depth):
@@ -109,7 +110,7 @@ elif args.rates_raw:
     if not args.page:
         raise Exception("Please specify --page for --rates-raw.")
 
-    page_id = wd.get_page_id(args.page)
+    page_id, _ = wd.get_page_id(args.page)
     if not page_id:
         raise Exception("Page not found: "+args.page)
 
@@ -119,7 +120,7 @@ elif args.rates:
     if not args.page:
         raise Exception("Please specify --page for --rates.")
 
-    page_id = wd.get_page_id(args.page)
+    page_id, _ = wd.get_page_id(args.page)
     if not page_id:
         raise Exception("Page not found: "+args.page)
 

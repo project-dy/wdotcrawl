@@ -1,4 +1,4 @@
-*This is a fork to make a permanent backup of the SCP wiki.*
+*This is a fork to make a permanent backup of the 보카로 가사 위키(vocaro lyrics wiki).*
 
 This is a Python command line client for relatively popular wiki hosting
 http://www.wikidot.com which lets you:
@@ -44,6 +44,8 @@ Someone else did Wikidot AJAX:
 The FTML format tailored for Wikidot-styled metadata and page source code:
 
 * https://gist.github.com/Zokhoi/06dbc890a4f2fab3eadcd7d2ed0d8698
+
+This repository references https://github.com/ytans/wdotcrawl.
 
 #### TODO
 

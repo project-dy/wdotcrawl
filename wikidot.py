@@ -213,10 +213,12 @@ class Wikidot:
                 return json['body'], (json['title'] if 'title' in json else '')
             else:
                 print(" ! error in response", json)
-
-                retries += 1
-                time.sleep(retries * retries * retries)
-                continue
+                if retries < self.max_retries:
+                    retries += 1
+                    time.sleep(retries * retries * retries)
+                    continue
+                else:
+                    raise Exception('Failed too many times for ' + url + ' with status: ' + json['status'] + ' and message: ' + json['message'])
 
         print(' ! Failed too many times', url, params, cookies)
         raise Exception('Failed too many times for ' + url)
@@ -617,7 +619,7 @@ class Wikidot:
         for tr in details.find_all('tr'):
             tds = tr.find_all('td')
             if len(tds) < 2: continue
-            if tds[0].getText().strip() == 'Page name:':
+            if tds[0].getText().strip() == '페이지 이름:' or tds[0].getText().strip() == 'Page name:':
                 unixname = tds[1].getText().strip()
 
         if unixname is None:
